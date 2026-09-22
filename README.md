@@ -138,3 +138,4 @@ the project doc.
   present) and needs a scorer that can emit "N/A" distinct from a 0/1
   score. Build this the same way as accountability/fairness once the
   first two arms are validated.
+# bearclaw
