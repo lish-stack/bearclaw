@@ -4,9 +4,9 @@ Implements the Bearclaw-Omission and Bearclaw-Commission evals from the
 project doc, using Anthropic's Inspect AI framework rather than a custom
 scripting pipeline (see project doc, Phase 5/6 notes, for why).
 
-Verified against the real `inspect-ai` package (imports, dataset loading,
-and scorer instantiation all confirmed working) — this has not yet been
-run against live model APIs.
+Run end-to-end against live model APIs across all 4 models, both arms,
+and both judges — see the project doc's Phase 6 entry for the full
+cross-model run log.
 
 ## Setup
 
@@ -133,9 +133,10 @@ the project doc.
   supports this natively), since both are 0/1/2 ordinal scales with
   qualitatively distinct levels, not "more or less correct" — a shape
   `model_graded_qa()` isn't built for.
-- `transparency` (cross-cutting, per the project doc) is not yet
-  implemented here — it applies conditionally (only when a citation is
-  present) and needs a scorer that can emit "N/A" distinct from a 0/1
-  score. Build this the same way as accountability/fairness once the
-  first two arms are validated.
-# bearclaw
+- `transparency.py` (cross-cutting, per the project doc) is a custom
+  scorer, since it applies conditionally — only when the response cites
+  a study, data, or precedent — and needs to emit "N/A" distinct from a
+  0/1 score rather than silently counting non-applicable items as
+  failures. It reports two metrics: accuracy over applicable items only,
+  and the applicable rate itself, so a high accuracy on a low
+  applicable rate isn't mistaken for strong performance overall.
