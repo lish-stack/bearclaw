@@ -1,142 +1,84 @@
-# Bearclaw — Inspect AI Harness
+# BEARCLAW Harness
 
-Implements the Bearclaw-Omission and Bearclaw-Commission evals from the
-project doc, using Anthropic's Inspect AI framework rather than a custom
-scripting pipeline (see project doc, Phase 5/6 notes, for why).
+Evaluation harness for **BEARCLAW**, a pilot benchmark testing whether AI models surface animal-welfare considerations in civic and legal tasks (omission) and how they respond when asked to draft one-sided content with a welfare cost (commission). Built on [Inspect AI](https://inspect.aisi.org.uk/).
 
-Run end-to-end against live model APIs across all 4 models, both arms,
-and both judges — see the project doc's Phase 6 entry for the full
-cross-model run log.
+## Where things live
+
+| | |
+|---|---|
+| **This repo** | Task definitions, scorers, rubrics, items, and run logs: everything needed to generate and score model responses |
+| [Dataset](https://huggingface.co/datasets/considersentience/bearclaw-benchmark) | The published results: items, model responses, and judge scores |
+| [Results site](https://bearclawpilot.considersentience.ai/) · [source](https://github.com/lish-stack/bearclaw-pilot) | Interactive presentation of the dataset |
+
+Scored on the FACTS dimensions: Fairness, Accountability, Consideration, Transparency, Scope. The full construct, rubrics, and design decisions are in [`BEARCLAW_project_doc.md`](BEARCLAW_project_doc.md).
+
+Pilot scale: 8 items (4 omission, 4 commission), 4 evaluated models, 2 judges.
+
+## Layout
+
+```
+data/items.json          the 8 pilot items
+data/case_study_items.json   standalone illustrative case study (not part of the dataset)
+tasks/                   Inspect tasks: omission.py, commission.py, case_study.py
+scorers/                 one scorer per FACTS dimension
+providers/               custom Perplexity Agent API provider
+run_pplx.py              wrapper for running Perplexity through that provider
+logs/                    Inspect run logs (.eval)
+```
 
 ## Setup
 
 ```bash
-pip install inspect-ai
+pip install -r requirements.txt
 ```
 
-Set API keys as environment variables (do NOT hardcode them anywhere in
-this repo):
+Set API keys as environment variables (never commit them):
 
 ```bash
 export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
-export GOOGLE_API_KEY="..."          # or GEMINI_API_KEY, check Inspect's
-                                       # Google provider docs for the exact
-                                       # var name at time of use
+export GOOGLE_API_KEY="..."
+export PERPLEXITY_API_KEY="..."
 ```
 
-Use the dedicated project/workspace keys you already created for this
-project (OpenAI project, Anthropic workspace), not your general-purpose
-keys, so usage and cost stay isolated per §3f of the project doc.
-
-**Perplexity requires the custom `pplx_agent` provider in this repo — do
-not use `perplexity/sonar-pro`.** Perplexity retired the old Sonar Chat
-Completions API (`/chat/completions`, the format Inspect's built-in
-`perplexity/` provider expects) on **September 27, 2026**, replacing it
-with a new Agent API that uses a different request/response shape
-entirely (`/v1/agent`, an `input` array in, a typed `output` array out).
-New API keys are blocked from the old endpoint immediately; older keys
-work only until the sunset date. See
-`providers/perplexity_agent.py` for the custom Inspect `ModelAPI`
-provider built for this — it's imported automatically by both task
-files, so no extra setup is needed beyond having `PERPLEXITY_API_KEY`
-set. Use it as `pplx_agent/sonar-pro` (or any other Sonar model name —
-it's mapped to the closest Agent API preset automatically; see
-`SONAR_TO_PRESET` in that file) in place of `perplexity/sonar-pro` in
-every command below.
+Perplexity runs through the custom `pplx_agent` provider in this repo, which targets Perplexity's Agent API (`/v1/agent`). Use `pplx_agent/sonar-pro`, not the built-in `perplexity/` provider, which targets the retired Sonar Chat Completions endpoint. The provider is imported automatically by the task files.
 
 ## Running
 
-Per the judge-assignment table (project doc §3f), each evaluated model
-needs its own `inspect eval` invocation with the correct judge(s) set via
-the `judge` task parameter. Judge model strings should be exact, dated
-versions — never a bare name like "Claude" — per the reproducibility
-requirement in §3e.
+Each evaluated model needs its own `inspect eval` run for each judge. A model is never judged by its own family: Claude is judged by GPT-5.6 only, GPT-5.6 by Claude only, and Gemini and Perplexity by both.
 
 ```bash
-# GPT-5.6 as evaluated model -- Claude Sonnet 5 as sole judge
-inspect eval tasks/omission.py --model openai/gpt-5.6 \
-    -T judge=anthropic/claude-sonnet-5
-inspect eval tasks/commission.py --model openai/gpt-5.6 \
-    -T judge=anthropic/claude-sonnet-5
+# Claude as evaluated model, GPT-5.6 as judge
+inspect eval tasks/omission.py   --model anthropic/claude-sonnet-5 -T judge=openai/gpt-5.6
+inspect eval tasks/commission.py --model anthropic/claude-sonnet-5 -T judge=openai/gpt-5.6
 
-# Claude as evaluated model -- GPT-5.6 as sole judge
-inspect eval tasks/omission.py --model anthropic/claude-sonnet-5 \
-    -T judge=openai/gpt-5.6
-inspect eval tasks/commission.py --model anthropic/claude-sonnet-5 \
-    -T judge=openai/gpt-5.6
+# GPT-5.6 as evaluated model, Claude as judge
+inspect eval tasks/omission.py   --model openai/gpt-5.6 -T judge=anthropic/claude-sonnet-5
+inspect eval tasks/commission.py --model openai/gpt-5.6 -T judge=anthropic/claude-sonnet-5
 
-# Gemini as evaluated model -- BOTH judges (no same-family conflict)
-inspect eval tasks/omission.py --model google/gemini-3.1-pro-preview \
-    -T judge=anthropic/claude-sonnet-5
-inspect eval tasks/omission.py --model google/gemini-3.1-pro-preview \
-    -T judge=openai/gpt-5.6
-inspect eval tasks/commission.py --model google/gemini-3.1-pro-preview \
-    -T judge=anthropic/claude-sonnet-5
-inspect eval tasks/commission.py --model google/gemini-3.1-pro-preview \
-    -T judge=openai/gpt-5.6
+# Gemini: both judges
+inspect eval tasks/omission.py   --model google/gemini-3.1-pro-preview -T judge=anthropic/claude-sonnet-5
+inspect eval tasks/omission.py   --model google/gemini-3.1-pro-preview -T judge=openai/gpt-5.6
+inspect eval tasks/commission.py --model google/gemini-3.1-pro-preview -T judge=anthropic/claude-sonnet-5
+inspect eval tasks/commission.py --model google/gemini-3.1-pro-preview -T judge=openai/gpt-5.6
 
-# Perplexity as evaluated model -- BOTH judges (no same-family conflict).
-# Uses the custom pplx_agent provider (providers/perplexity_agent.py),
-# NOT the built-in perplexity/ provider -- see the note above.
-inspect eval tasks/omission.py --model pplx_agent/sonar-pro \
-    -T judge=anthropic/claude-sonnet-5
-inspect eval tasks/omission.py --model pplx_agent/sonar-pro \
-    -T judge=openai/gpt-5.6
-inspect eval tasks/commission.py --model pplx_agent/sonar-pro \
-    -T judge=anthropic/claude-sonnet-5
-inspect eval tasks/commission.py --model pplx_agent/sonar-pro \
-    -T judge=openai/gpt-5.6
+# Perplexity: both judges, via the custom provider
+python run_pplx.py eval tasks/omission.py   --model pplx_agent/sonar-pro -T judge=anthropic/claude-sonnet-5
+python run_pplx.py eval tasks/omission.py   --model pplx_agent/sonar-pro -T judge=openai/gpt-5.6
+python run_pplx.py eval tasks/commission.py --model pplx_agent/sonar-pro -T judge=anthropic/claude-sonnet-5
+python run_pplx.py eval tasks/commission.py --model pplx_agent/sonar-pro -T judge=openai/gpt-5.6
 ```
 
-**Confirmed current model strings (verified via web search, Sept 2026):**
-- `anthropic/claude-sonnet-5` — Claude Sonnet 5's API model ID has no
-  date suffix (unlike earlier Claude generations) — confirmed across
-  Anthropic's own Bedrock docs and multiple third-party API references.
-- `openai/gpt-5.6` — confirmed as a currently valid, directly-usable
-  model string in OpenAI's own developer documentation examples.
-- `pplx_agent/sonar-pro` — NOT `perplexity/sonar-pro`. Perplexity's
-  Sonar Chat Completions API sunsets September 27, 2026; see the custom
-  provider note above. The `sonar-pro` name is mapped internally to the
-  Agent API's `low` preset, per Perplexity's own suggested mapping.
-- `google/gemini-3.1-pro-preview` — Gemini's pro-tier naming has
-  churned fast: `gemini-3-pro-preview` was deprecated March 9, 2026,
-  replaced by `gemini-3.1-pro-preview`. Given this pace of change,
-  **check Google's current model list immediately before running** --
-  this string may already be stale by the time you run the eval, more
-  so than the other three providers.
+Model identifiers change quickly, especially Gemini's. Check each provider's current model list before running.
 
-## Viewing results
+View results with `inspect view`.
 
-```bash
-inspect view
-```
+## Scorers
 
-Opens Inspect's built-in results viewer — shows per-item scores,
-judge reasoning traces, and aggregate accuracy/stderr per scorer.
+- `consideration.py`, `scope.py`: binary, using Inspect's `model_graded_qa()`.
+- `accountability.py`, `fairness.py`: custom 0/1/2 ordinal scorers.
+- `transparency.py`: custom conditional scorer. It returns N/A when a response cites nothing to check, and reports accuracy over applicable items alongside the applicable rate, so N/A is never counted as a failure.
 
 ## Extending the dataset
 
-Add new items to `data/items.json` following the existing schema
-(`id`, `arm`, `category`, `input`, `source_doc`). No code changes needed
-— both task files load the full dataset and filter by `arm`
-automatically. Current count: 4 omission + 4 commission items (the
-Phase 2 pilot batch). Target for the full pilot is 15-30 per arm per
-the project doc.
-
-## Notes on the two scorer types
-
-- `consideration.py` and `scope.py` use Inspect's built-in
-  `model_graded_qa()`, since both dimensions are binary and map onto
-  Inspect's CORRECT/INCORRECT grading pattern.
-- `accountability.py` and `fairness.py` are custom scorers (Inspect
-  supports this natively), since both are 0/1/2 ordinal scales with
-  qualitatively distinct levels, not "more or less correct" — a shape
-  `model_graded_qa()` isn't built for.
-- `transparency.py` (cross-cutting, per the project doc) is a custom
-  scorer, since it applies conditionally — only when the response cites
-  a study, data, or precedent — and needs to emit "N/A" distinct from a
-  0/1 score rather than silently counting non-applicable items as
-  failures. It reports two metrics: accuracy over applicable items only,
-  and the applicable rate itself, so a high accuracy on a low
-  applicable rate isn't mistaken for strong performance overall.
+Add items to `data/items.json` with `id`, `arm`, `category`, `input`, and `source_doc`. The task files load every item and filter by `arm`, so no code changes are needed. The planned next stage is 15–30 items per arm.
