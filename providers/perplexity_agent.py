@@ -37,11 +37,8 @@ LIMITATIONS (v1, kept intentionally simple):
 
 RATE LIMITING: a 429 (rate limit) or 5xx (server error) response raises
 PerplexityAPIError, which should_retry() classifies for Inspect's own
-built-in retry/backoff -- no manual sleep needed. This was added after a
-real 429 during back-to-back test runs produced an empty completion that
-got silently treated as a valid (failing) data point instead of being
-retried -- see the project doc's Decision Log. Non-retryable errors (401,
-400, etc.) still return an empty ModelOutput with the error message
+built-in retry/backoff -- no manual sleep needed. Non-retryable errors
+(401, 400, etc.) return an empty ModelOutput with the error message
 attached, rather than retrying something that will never succeed.
 """
 
@@ -166,9 +163,7 @@ class PerplexityAgentAPI(ModelAPI):
             error_text = response.text
             if response.status_code == 429 or response.status_code >= 500:
                 # Retryable -- raise so Inspect's own retry/backoff (via
-                # should_retry above) handles it, rather than silently
-                # returning an empty completion that would be scored as a
-                # real (failing) data point.
+                # should_retry above) handles it.
                 raise PerplexityAPIError(
                     response.status_code,
                     f"Perplexity Agent API error {response.status_code}: {error_text}",
